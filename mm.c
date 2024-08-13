@@ -24,11 +24,11 @@
  ********************************************************/
 team_t team = {
     /* Team name */
-    "ateam",
+    "team_5",
     /* First member's full name */
-    "Harry Bovik",
+    "park geon woo",
     /* First member's email address */
-    "bovik@cs.cmu.edu",
+    "ceh20002@naver.com",
     /* Second member's full name (leave blank if none) */
     "",
     /* Second member's email address (leave blank if none) */
@@ -43,6 +43,10 @@ team_t team = {
 
 
 #define SIZE_T_SIZE (ALIGN(sizeof(size_t)))
+
+static char *mem_heap; // points to first byte of heap
+static char *mem_brk; // poinsts to last byte of heap plus 1
+static char *mem_max_addr; // max legalheap addr plus 1
 
 /* 
  * mm_init - initialize the malloc package.
