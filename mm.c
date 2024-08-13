@@ -50,13 +50,27 @@ team_t team = {
 #define GET(p) (*(unsigned int *)(p))
 #define PUT(p, val)(*(unsigned int *)(p) = (val))
 
+/* 블록의 크기를 가져옵니다. 하위 3비트를 마스킹하여 제거합니다.
+   이는 크기가 8의 배수이며, 하위 3비트가 다른 정보를 저장하는 데 사용되기 때문입니다. */
 #define GET_SIZE(p) (GET(p) & ~0x7)
+
+/* 블록의 할당 상태를 가져옵니다. 최하위 비트가 1이면 할당된 상태, 0이면 가용 상태입니다. */
 #define GET_ALLOC(p) (GET(p) & 0x1)
 
+/* 주어진 블록 포인터(bp)에서 해당 블록의 헤더 포인터를 계산합니다.
+   bp에서 WSIZE(워드 크기)만큼 뒤로 가면 헤더 위치가 됩니다. */
 #define HDRP(bp) ((char *)(bp) - WSIZE)
+
+/* 주어진 블록 포인터(bp)에서 해당 블록의 푸터 포인터를 계산합니다.
+   bp에 블록 크기를 더하고 DSIZE(더블 워드 크기)를 빼면 푸터 위치가 됩니다. */
 #define FTRP(bp) ((char *)(bp) + GET_SIZE(HDRP(bp)) - DSIZE)
 
+/* 현재 블록의 다음 블록 포인터를 계산합니다.
+   현재 블록의 크기만큼 앞으로 이동하면 다음 블록의 시작점이 됩니다. */
 #define NEXT_BLKP(bp) ((char *)(bp) + GET_SIZE(((char *)(bp) - WSIZE)))
+
+/* 현재 블록의 이전 블록 포인터를 계산합니다.
+   이전 블록의 푸터에서 크기를 읽어 그만큼 뒤로 이동합니다. */
 #define PREV_BLKP(bp) ((char *)(bp) - GET_SIZE(((char *)(bp) - DSIZE)))
 
 static void *extend_heap(size_t words);
@@ -70,50 +84,73 @@ static char *mem_brk; // poinsts to last byte of heap plus 1
 static char *mem_max_addr; // max legalheap addr plus 1
 static char *heap_listp = NULL;
 
-/* 
- * mm_init - initialize the malloc package.
- */
 int mm_init(void)
 {
+    // 빈 힙 생성
     if ((heap_listp = mem_sbrk(4*WSIZE)) == (void *) -1) return -1;
+    // 첫 번째 워드를 0으로 더블 워드 경계로 정렬된 미사용 패딩 워드임, 패딩 다음에는 특별한 프롤로그 prolog 블록이 오며, 이것은 헤더와 풋터로만 구성된 8바이트 할당 블록
+    // 프롤로그 블록은 초기화 과정에서 생성되며 절대 반환하지 않는다. 프롤로그 블록 다음에는 malloc 또는 free를 호출해서 생성된 0또는 1개 이상의 일반 블록들이 온다. 
+    // 힙은 항상 특별한 에필로그 블록으로 끝나며, 이것은 헤더 만드로 구성된 크디가 0으로 할당된 블록이다.
+    // 프롤로그와 에필로그 블록들은 연결과정 동안에 가장자리 조건을 없애주기 위한 속임수다. 할당기는 한 개의 정적 전역 변수를 사용하며, 이것은 항상 프롤로그 블록을 가르킨다.
+    // 작은 최적화로 프롤로그 블록 대신에 다음 블록을 가리키게 할 수 있다.
     PUT(heap_listp, 0);
+     // 두 번째 워드에 프롤로그 헤더를 설정합니다. PACK(DSIZE,1)는 크기가 DSIZE(더블 워드 크기, 보통 8바이트)이고 할당된 상태(1)임을 나타냅니다.
     PUT(heap_listp + (1*WSIZE), PACK(DSIZE,1));
+    // 세 번째 워드에 프롤로그 푸터를 설정합니다. 헤더와 동일한 값을 가집니다.
     PUT(heap_listp + (2*WSIZE), PACK(DSIZE,1));
-    PUT(heap_listp + (3*WSIZE), PACK(0,1));
+    // 네 번째 워드에 에필로그 헤더를 설정합니다. 크기 0, 할당 상태 1을 나타냅니다. 
+    PUT(heap_listp + (3*WSIZE), PACK(0,1)); 
+     // heap_listp를 프롤로그 블록 다음으로 이동시킵니다., 이제 첫 번째 가용 블록을 가리키게 됩니다.
     heap_listp += (2*WSIZE);
-
     if (extend_heap(CHUNKSIZE/WSIZE) == NULL){
         return - 1;
     }
     return 0;
 }
 
-/*
- * mm_free - Freeing a block does nothing.
- */
+
+static void *extend_heap(size_t words){
+    char *bp;
+    size_t size;
+    // 요청된 워드 수가 홀수인 경우, 짝수로 만들어 8바이트 정렬을 보장 
+    size = (words % 2) ? (words+1) * WSIZE : words * WSIZE;
+    // mem_sbrk(size)를 호출하여 힙을 확장 실패시 -1을 반환하므로, 이후 NULL을 반환하고 함수를 종료함
+    if ((long)(bp = mem_sbrk(size)) == -1){
+        return NULL;
+    }
+    // 블록의 헤더 위치를 계산
+    PUT(HDRP(bp),PACK(size,0));
+    // PACK(size, 0)은 블록 크기와 할당 상태(0 = 가용)을 패키징 합니다.)
+    PUT(FTRP(bp),PACK(size,0));
+    // PUT은 계산된 값을 헤더에 저장
+    PUT(HDRP(NEXT_BLKP(bp)),PACK(0,1));
+
+    return coalesce(bp);
+}
 
 void mm_free(void *bp)
-{
+{   
+    // GET_SIZE를 통해 헤더에서 블록의 크기를 읽어옴
     size_t size = GET_SIZE(HDRP(bp));
 
+    // 블록의 해더를 업테이트 함 PACK(HDRP(bp), PACK(size, 0));을 통해 블록의 크기와 할당 상태를 가용 가능으로 바꿔줌
     PUT(HDRP(bp), PACK(size, 0));
     PUT(FTRP(bp), PACK(size, 0));
     coalesce(bp);
 }
 
-/* 
- * mm_malloc - Allocate a block by incrementing the brk pointer.
- *     Always allocate a block whose size is a multiple of the alignment.
- */
+
 void *mm_malloc(size_t size)
 {
-    size_t asize;      /* Adjusted block size */
-    size_t extendsize; /* Amount to extend heap if no fit */
+    // 오버헤드와 정렬 오구사항을 고려한 조정된 블록 크기
+    size_t asize; 
+    // 적합한 블록을 찾지 못했을 때 힙을 확장한 크기
+    size_t extendsize;
+    // 블록 포인터로, 할당된 메모리 블록을 가리킴
     char *bp;
 
-    /* Ignore spurious requests */
-    if (size == 0)
-        return NULL;
+    // 요청의 크기가 0인 경우, NULL을 반환하여 요청을 무시
+    if (size == 0) return NULL;
 
     /* Adjust block size to include overhead and alignment reqs. */
     if (size <= DSIZE)
@@ -166,22 +203,6 @@ void *mm_realloc(void *ptr, size_t size)
     memcpy(newptr, oldptr, copySize);
     mm_free(oldptr);
     return newptr;
-}
-
-static void *extend_heap(size_t words){
-    char *bp;
-    size_t size;
-
-    size = (words % 2) ? (words+1) * WSIZE : words * WSIZE;
-    if ((long)(bp = mem_sbrk(size)) == -1){
-        return NULL;
-    }
-
-    PUT(HDRP(bp),PACK(size,0));
-    PUT(FTRP(bp),PACK(size,0));
-    PUT(HDRP(NEXT_BLKP(bp)),PACK(0,1));
-
-    return coalesce(bp);
 }
 
 static void *coalesce(void *bp)
