@@ -135,36 +135,42 @@ void *mm_malloc(size_t size)
     return bp;
 }
 
-/*
- * mm_realloc - Implemented simply in terms of mm_malloc and mm_free
- */
 void *mm_realloc(void *ptr, size_t size)
 {
     void *oldptr = ptr;
     void *newptr;
     size_t copySize;
     
-    // 만약 ptr이 NULL이면, malloc과 동일하게 동작합니다.
+    // 케이스 1: 기존 포인터가 NULL인 경우
+    // 이는 새로운 메모리 할당을 의미하므로, 단순히 malloc을 호출
     if (ptr == NULL)
         return mm_malloc(size);
     
-    // 만약 size가 0이면, free와 동일하게 동작합니다.
+    // 케이스 2: 요청한 크기가 0인 경우
+    // 이는 메모리 해제를 의미하므로, free를 호출하고 NULL을 반환
     if (size == 0) {
         mm_free(ptr);
         return NULL;
     }
     
+    // 새로운 크기로 메모리를 할당
     newptr = mm_malloc(size);
+    // 메모리 할당에 실패한 경우 NULL을 반환
     if (newptr == NULL)
         return NULL;
     
-    // 올바른 복사 크기 계산
-    copySize = GET_SIZE(HDRP(oldptr)) - DSIZE; // 헤더와 푸터 크기를 제외
+    // 복사할 데이터의 크기를 결정
+    // 기존 블록의 크기에서 헤더와 푸터의 크기(DSIZE)를 뺌
+    copySize = GET_SIZE(HDRP(oldptr)) - DSIZE; 
+    // 새로 요청한 크기가 기존 데이터 크기보다 작다면, 새 크기만큼만 복사
     if (size < copySize)
         copySize = size;
     
+    // 기존 데이터를 새 위치로 복사
     memcpy(newptr, oldptr, copySize);
+    // 기존 메모리를 해제합니다.
     mm_free(oldptr);
+    // 새로 할당된 메모리의 포인터를 반환
     return newptr;
 }
 
