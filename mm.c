@@ -61,7 +61,7 @@ team_t team = {
 
 static void *extend_heap(size_t words);
 static void *coalesce(void *bp);
-static void *find_fit(size_t asize);
+static void *next_fit(size_t asize);
 static void place(void *bp, size_t asize);
 void *mm_realloc(void *ptr, size_t size);
 
@@ -69,6 +69,7 @@ static char *mem_heap; // points to first byte of heap
 static char *mem_brk; // poinsts to last byte of heap plus 1
 static char *mem_max_addr; // max legalheap addr plus 1
 static char *heap_listp = NULL;
+static char *recent_allocate;
 
 /* 
  * mm_init - initialize the malloc package.
@@ -122,8 +123,9 @@ void *mm_malloc(size_t size)
         asize = DSIZE * ((size + (DSIZE) + (DSIZE-1)) / DSIZE);
 
     /* Search the free list for a fit */
-    if ((bp = find_fit(asize)) != NULL) {
+    if ((bp = next_fit(asize)) != NULL) {
         place(bp, asize);
+        recent_allocate = bp;
         return bp;
     }
 
@@ -131,24 +133,23 @@ void *mm_malloc(size_t size)
     extendsize = MAX(asize,CHUNKSIZE);
     if ((bp = extend_heap(extendsize/WSIZE)) == NULL)
         return NULL;
+
     place(bp, asize);
+    recent_allocate = bp;
     return bp;
 }
 
-/*
- * mm_realloc - Implemented simply in terms of mm_malloc and mm_free
- */
 void *mm_realloc(void *ptr, size_t size)
 {
     void *oldptr = ptr;
     void *newptr;
     size_t copySize;
     
-    // 만약 ptr이 NULL이면, malloc과 동일하게 동작합니다.
+    // 만약 ptr이 NULL이면, malloc과 동일하게 동작
     if (ptr == NULL)
         return mm_malloc(size);
     
-    // 만약 size가 0이면, free와 동일하게 동작합니다.
+    // 만약 size가 0이면, free와 동일하게 동작
     if (size == 0) {
         mm_free(ptr);
         return NULL;
@@ -213,41 +214,45 @@ static void *coalesce(void *bp)
         PUT(FTRP(NEXT_BLKP(bp)), PACK(size, 0));
         bp = PREV_BLKP(bp);
     }
+    recent_allocate = bp;
     return bp;
-}
+} 
 
-static void *find_fit(size_t asize){
+static void *next_fit(size_t asize){
     void *bp;
-
-    for (bp = heap_listp; GET_SIZE(HDRP(bp)) > 0; bp = NEXT_BLKP(bp)){
+    if (recent_allocate == NULL){
+        recent_allocate = heap_listp;
+    }
+    // GET_SIZE(HDRP(bp)) > 0로 블록 크기가 0보다 큰 동안 계속
+    for (bp = recent_allocate; GET_SIZE(HDRP(bp)) > 0; bp = NEXT_BLKP(bp)){
         if (!GET_ALLOC(HDRP(bp)) && (asize <= GET_SIZE(HDRP(bp)))){
+            recent_allocate = bp;
             return bp;
         }
     }
     return NULL;
 }
 
+// // 최소 크기는 2*DSIZE(일반적으로 16바이트)입니다.
 static void place(void *bp, size_t asize){
     size_t csize = GET_SIZE(HDRP(bp));
-
+    // 현재 블록의 크기에서 요청된 크기를 뺀 값이 최소 블록 크기(2*DSIZE)보다 크거나 같은지 확인합니다.
+    // 이는 블록을 분할할 수 있는지 확인하는 조건입니다.
+    // csize 는 현재 가용 블록의 전체 크기 asize 실제 할당될 블록의 크기(헤더 푸터 포함)
     if ((csize - asize) >= (2*DSIZE)){
+        // 요청된 크기로 새 할당 블록의 헤더를 설정합니다.
         PUT(HDRP(bp), PACK(asize, 1));
+        // 요청된 크기로 새 할당 블록의 푸터를 설정합니다.
         PUT(FTRP(bp), PACK(asize, 1));
+        // 포인터를 다음 블록으로 이동합니다.
         bp = NEXT_BLKP(bp);
+        // 남은 공간에 새 가용 블록의 헤더를 설정합니다.
         PUT(HDRP(bp), PACK(csize-asize , 0));
+        // 남은 공간에 새 가용 블록의 푸터를 설정합니다.
         PUT(FTRP(bp), PACK(csize-asize, 0));
+        // 만약 분할이 불가능하다면
     } else {
         PUT(HDRP(bp), PACK(csize, 1));
         PUT(FTRP(bp), PACK(csize, 1));
     }
 }
-
-
-
-
-
-
-
-
-
-
