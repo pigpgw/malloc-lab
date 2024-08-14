@@ -61,7 +61,7 @@ team_t team = {
 
 static void *extend_heap(size_t words);
 static void *coalesce(void *bp);
-static void *find_fit(size_t asize);
+static void *best_fit(size_t asize);
 static void place(void *bp, size_t asize);
 void *mm_realloc(void *ptr, size_t size);
 
@@ -122,7 +122,7 @@ void *mm_malloc(size_t size)
         asize = DSIZE * ((size + (DSIZE) + (DSIZE-1)) / DSIZE);
 
     /* Search the free list for a fit */
-    if ((bp = find_fit(asize)) != NULL) {
+    if ((bp = best_fit(asize)) != NULL) {
         place(bp, asize);
         return bp;
     }
@@ -222,15 +222,23 @@ static void *coalesce(void *bp)
     return bp;
 }
 
-static void *find_fit(size_t asize){
+static void *best_fit(size_t asize) {
     void *bp;
+    void *best_bp = NULL;
+    size_t min_size = (size_t) - 1;  // SIZE_MAX는 <stdint.h>에 정의된 size_t의 최대값
 
-    for (bp = heap_listp; GET_SIZE(HDRP(bp)) > 0; bp = NEXT_BLKP(bp)){
-        if (!GET_ALLOC(HDRP(bp)) && (asize <= GET_SIZE(HDRP(bp)))){
-            return bp;
+    // 힙을 순회하면서 가장 적합한 블록을 찾습니다.
+    for (bp = heap_listp; GET_SIZE(HDRP(bp)) > 0; bp = NEXT_BLKP(bp)) {
+        if (!GET_ALLOC(HDRP(bp)) && (asize <= GET_SIZE(HDRP(bp)))) {
+            // 현재 블록이 요청 크기보다 크거나 같고, 지금까지 찾은 것 중 가장 작은 블록이라면
+            if (GET_SIZE(HDRP(bp)) < min_size) {
+                min_size = GET_SIZE(HDRP(bp));
+                best_bp = bp;
+            }
         }
     }
-    return NULL;
+
+    return best_bp;  // 가장 적합한 블록을 반환하거나, 없으면 NULL 반환
 }
 
 static void place(void *bp, size_t asize){
