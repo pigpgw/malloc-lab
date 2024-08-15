@@ -135,43 +135,32 @@ void *mm_malloc(size_t size)
     return bp;
 }
 
+// size는 실제 paload 크기
 void *mm_realloc(void *ptr, size_t size)
 {
-    void *oldptr = ptr;
-    void *newptr;
-    size_t copySize;
-    
-    // 케이스 1: 기존 포인터가 NULL인 경우
-    // 이는 새로운 메모리 할당을 의미하므로, 단순히 malloc을 호출
-    if (ptr == NULL)
-        return mm_malloc(size);
-    
-    // 케이스 2: 요청한 크기가 0인 경우
-    // 이는 메모리 해제를 의미하므로, free를 호출하고 NULL을 반환
-    if (size == 0) {
-        mm_free(ptr);
-        return NULL;
+    size_t old_size = GET_SIZE(HDRP(ptr));
+    size_t new_size = size + (2 * WSIZE);
+
+    if (new_size <= old_size){
+        return ptr;
     }
-    
-    // 새로운 크기로 메모리를 할당
-    newptr = mm_malloc(size);
-    // 메모리 할당에 실패한 경우 NULL을 반환
-    if (newptr == NULL)
-        return NULL;
-    
-    // 복사할 데이터의 크기를 결정
-    // 기존 블록의 크기에서 헤더와 푸터의 크기(DSIZE)를 뺌
-    copySize = GET_SIZE(HDRP(oldptr)) - DSIZE; 
-    // 새로 요청한 크기가 기존 데이터 크기보다 작다면, 새 크기만큼만 복사
-    if (size < copySize)
-        copySize = size;
-    
-    // 기존 데이터를 새 위치로 복사
-    memcpy(newptr, oldptr, copySize);
-    // 기존 메모리를 해제합니다.
-    mm_free(oldptr);
-    // 새로 할당된 메모리의 포인터를 반환
-    return newptr;
+    else {
+        size_t next_alloc = GET_ALLOC(HDRP(NEXT_BLKP(ptr)));
+        size_t current_size = old_size + GET_SIZE(HDRP(NEXT_BLKP(ptr)));
+
+        if (!next_alloc && current_size >= new_size){
+            PUT(HDRP(ptr), PACK(current_size, 1));
+            PUT(FTRP(ptr), PACK(current_size, 1));
+            return ptr;
+        }
+        else {
+            void *new_bp = mm_malloc(new_size);
+            place(new_bp, new_size);
+            memcpy(new_bp, ptr, new_size);
+            mm_free(ptr);
+            return new_bp;
+        }
+    }
 }
 
 static void *extend_heap(size_t words){
