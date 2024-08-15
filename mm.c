@@ -256,21 +256,32 @@ static void *coalesce(void *bp)
 static void *next_fit(size_t asize)
 {
     void *bp;
-    
-    /* 처음 호출 시 recent_allocate 초기화 */
+    void *start_search;
+
+    // recent_allocate가 NULL이면 힙의 시작점으로 초기화
     if (recent_allocate == NULL) {
         recent_allocate = heap_listp;
     }
-    
-    /* 최근 할당 위치부터 힙의 끝까지 검색 */
-    for (bp = recent_allocate; GET_SIZE(HDRP(bp)) > 0; bp = NEXT_BLKP(bp)) {
+
+    start_search = recent_allocate;
+
+    // recent_allocate부터 힙의 끝까지 검색 (next fit)
+    for (bp = start_search; GET_SIZE(HDRP(bp)) > 0; bp = NEXT_BLKP(bp)) {
         if (!GET_ALLOC(HDRP(bp)) && (asize <= GET_SIZE(HDRP(bp)))) {
             recent_allocate = bp;
             return bp;
         }
     }
-    
-    /* 적합한 블록을 찾지 못한 경우 NULL 반환 */
+
+    // 힙의 시작부터 start_search까지 검색 (first fit)
+    for (bp = heap_listp; bp < start_search; bp = NEXT_BLKP(bp)) {
+        if (!GET_ALLOC(HDRP(bp)) && (asize <= GET_SIZE(HDRP(bp)))) {
+            recent_allocate = bp;
+            return bp;
+        }
+    }
+
+    // 적합한 블록을 찾지 못한 경우
     return NULL;
 }
 
