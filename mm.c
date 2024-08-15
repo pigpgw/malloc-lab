@@ -142,23 +142,34 @@ void *mm_malloc(size_t size)
 // size는 실제 paload 크기
 void *mm_realloc(void *ptr, size_t size)
 {
+    // 기존 블록의 크기를 가져옵니다 (헤더에서 크기 정보를 읽음)
     size_t old_size = GET_SIZE(HDRP(ptr));
+    
+    // 새로운 크기를 계산합니다 (요청된 크기 + 헤더와 푸터 크기)
     size_t new_size = size + (2 * WSIZE);
 
+    // 새 크기가 기존 크기보다 작거나 같으면 현재 블록을 그대로 사용
     if (new_size <= old_size){
         return ptr;
     }
     else {
+        // 다음 블록의 할당 상태를 확인
         size_t next_alloc = GET_ALLOC(HDRP(NEXT_BLKP(ptr)));
+        // 현재 블록과 다음 블록의 크기 합을 계산
         size_t current_size = old_size + GET_SIZE(HDRP(NEXT_BLKP(ptr)));
 
+        // 다음 블록이 가용 상태이고, 현재 블록과 다음 블록의 크기 합이 새로운 크기보다 크거나 같으면
         if (!next_alloc && current_size >= new_size){
+            // 현재 블록과 다음 블록을 합쳐서 하나의 할당된 블록으로 만듦
             PUT(HDRP(ptr), PACK(current_size, 1));
             PUT(FTRP(ptr), PACK(current_size, 1));
             return ptr;
         }
         else {
+            // 새로운 크기의 메모리 블록을 할당
             void *new_bp = mm_malloc(new_size);
+            
+            // 새 블록에 적절한 크기를 설정 (내부 단편화 처리)
             place(new_bp, new_size);
             memcpy(new_bp, ptr, new_size);
             mm_free(ptr);
